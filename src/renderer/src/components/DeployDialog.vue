@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { RepoItem, DockerProbe, DeployPlan } from '../../../shared/types'
 import { toast, saveSettings } from '../store'
+import { toCloneable } from '../cloneable'
 import EnvDiagnose from './EnvDiagnose.vue'
 
 const props = defineProps<{ repo: RepoItem }>()
@@ -138,7 +139,7 @@ async function startDeploy(): Promise<void> {
   running.value = true
   doneOk.value = null
   try {
-    const { taskId: id } = await window.api.deploy.run(plan.value)
+    const { taskId: id } = await window.api.deploy.run(toCloneable(plan.value))
     taskId.value = id
     logs.value.push({ stream: 'system', line: `任务已启动：${id.slice(0, 8)}` })
   } catch (err: any) {

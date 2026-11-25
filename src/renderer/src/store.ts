@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import type { Settings, RepoItem, AiPolishResult } from '../../shared/types'
+import { toCloneable } from './cloneable'
 
 export interface Toast {
   id: number
@@ -77,7 +78,9 @@ export async function loadSettings(): Promise<void> {
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  state.settings = await window.api.settings.save(patch)
+  // patch 一般来自 ref/reactive，是 Proxy；跨 contextBridge 传参会抛
+  // "An object could not be cloned."，所以先剥一层再发
+  state.settings = await window.api.settings.save(toCloneable(patch))
   state.aiEnabled = state.settings.ai.enabled
 }
 

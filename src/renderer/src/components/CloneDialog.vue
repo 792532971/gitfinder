@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type { RepoItem, ClonePlan, CloneTarget, CloneExistsMode, GitAvailability } from '../../../shared/types'
 import { toast } from '../store'
+import { toCloneable } from '../cloneable'
 
 const props = defineProps<{ repo: RepoItem }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -186,7 +187,7 @@ async function start(): Promise<void> {
   doneOk.value = null
   doneDir.value = ''
   try {
-    const { taskId: id } = await window.api.clone.run(plan.value)
+    const { taskId: id } = await window.api.clone.run(toCloneable(plan.value))
     taskId.value = id
     rememberDir(target.value, parentDir.value)
     logs.value.push({
@@ -210,7 +211,7 @@ async function cancel(): Promise<void> {
 async function reveal(): Promise<void> {
   if (!plan.value) return
   try {
-    const res = await window.api.clone.reveal(plan.value)
+    const res = await window.api.clone.reveal(toCloneable(plan.value))
     if (!res.ok) toast(res.message, 'warn')
   } catch (err: any) {
     toast(`打开目录失败：${err.message}`, 'error')
