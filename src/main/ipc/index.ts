@@ -2,7 +2,7 @@ import { app, ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import { loadSettings, saveSettings, applyProxy, userDataDir } from '../lib/settings'
 import { search, readme, probeDocker, releases } from './github'
 import { fetchQuota } from './quota'
-import { polish, test as testAi } from './ai'
+import { polish, test as testAi, translate } from './ai'
 import * as deploy from './deploy'
 import * as clone from './clone'
 import * as installer from './installer'
@@ -73,10 +73,13 @@ export function registerIpc(): void {
   // ---------- ai ----------
   handle('ai:polish', async (_e, text: string) => polish(text))
   handle('ai:test', async () => testAi())
+  handle('ai:translate', async (_e, input: { text: string; fullName?: string }) => translate(input))
 
   // ---------- github ----------
   handle('github:search', async (_e, params: SearchParams) => search(params))
-  handle('github:readme', async (_e, owner: string, repo: string) => readme(owner, repo))
+  handle('github:readme', async (_e, owner: string, repo: string, branch?: string) =>
+    readme(owner, repo, branch)
+  )
   handle('github:probe-docker', async (_e, owner: string, repo: string) =>
     probeDocker(owner, repo)
   )

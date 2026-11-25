@@ -158,6 +158,30 @@ export interface ProfileUpdateEvent {
 }
 
 /** 榜单里的一条记录：在 RepoItem 基础上补充榜单位次与涨星指标 */
+/** README 读取结果：把「真的没有」和「读不到」分开 */
+export interface ReadmeResult {
+  ok: boolean
+  text: string
+  /** raw 直连不耗配额，api 走 GitHub 接口 */
+  source: 'raw' | 'api' | ''
+  /** 实际命中的文件名，如 README.md */
+  fileName: string
+  code: '' | 'not-found' | 'rate-limit' | 'network' | 'auth'
+  message: string
+  hint: string
+}
+
+/** README 翻译结果 */
+export interface TranslateResult {
+  ok: boolean
+  text: string
+  /** 分段数量 */
+  chunks: number
+  /** 是否命中本地缓存（命中的不花 token） */
+  cached: boolean
+  message: string
+}
+
 export interface BoardItem extends RepoItem {
   rank: number
   /** 涨星数（GitHub 官方口径或本地采样） */
@@ -370,10 +394,13 @@ export interface Api {
   ai: {
     polish: (text: string) => Promise<AiPolishResult>
     test: () => Promise<{ ok: boolean; message: string }>
+    /** 把 README 译成中文，只在用户点击时调用 */
+    translate: (input: { text: string; fullName?: string }) => Promise<TranslateResult>
   }
   github: {
     search: (params: SearchParams) => Promise<SearchResponse>
-    readme: (owner: string, repo: string) => Promise<string>
+    /** 失败不抛错，用 code 区分「没有 README」和「配额/网络读不到」 */
+    readme: (owner: string, repo: string, branch?: string) => Promise<ReadmeResult>
     probeDocker: (owner: string, repo: string) => Promise<DockerProbe>
     releases: (owner: string, repo: string) => Promise<ReleaseInfo | null>
     /** 查询当前接口配额（core / search 两个独立池子） */

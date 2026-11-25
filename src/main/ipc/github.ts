@@ -6,7 +6,8 @@ import type {
   RepoItem,
   DockerProbe,
   ReleaseInfo,
-  ReleaseAsset
+  ReleaseAsset,
+  ReadmeResult
 } from '../../shared/types'
 
 const API = 'https://api.github.com'
@@ -112,13 +113,130 @@ async function fetchWithRateInfo(url: string): Promise<SearchResponse> {
   }
 }
 
-/** 读取 README 纯文本，失败返回空串 */
-export async function readme(owner: string, repo: string): Promise<string> {
-  try {
-    return await ghText(`${API}/repos/${owner}/${repo}/readme`, 'application/vnd.github.raw')
-  } catch {
-    return ''
+/* ------------------------------------------------------------------
+ * README 读取
+ *
+ * 这里有三个必须分开的语义：仓库真的没有 README / 配额用尽读不到 / 网络炸了。
+ * 之前统一 catch 成空串，界面就一律显示"没有 README"，把配额问题伪装成内容问题。
+ *
+ * 读取顺序：先走 raw.githubusercontent.com 直连（不消耗 API 配额、不受 core 限流影响），
+ * 拿不到再用 GitHub API 确认到底是没有还是读不到。
+ * ------------------------------------------------------------------ */
+
+function readmeOk(text: string, source: 'raw' | 'api', fileName: string): ReadmeResult {
+  return { ok: true, text, source, fileName, code: '', message: '', hint: '' }
+}
+
+function readmeFail(
+  code: ReadmeResult['code'],
+  message: string,
+  hint = ''
+): ReadmeResult {
+  return { ok: false, text: '', source: '', fileName: '', code, message, hint }
+}
+
+/** 常见 README 文件名，按命中概率排序 */
+const README_NAMES = ['README.md', 'readme.md', 'Readme.md', 'README.MD', 'README.rst', 'README']
+
+let rawReachable: { at: number; ok: boolean } | null = null
+
+/**
+ * raw.githubusercontent.com 是否可达。
+ * 可达缓存 10 分钟；不可达只缓存 2 分钟——国内这域名时通时不通，
+ * 探一次失败就把整段时间都判死会让用户一直读不到。
+ * 超时给到 12 秒：冷启动首次 TLS 握手可能要好几秒，6 秒会误判。
+ */
+async function canUseRaw(): Promise<boolean> {
+  if (rawReachable) {
+    const ttl = rawReachable.ok ? 10 * 60_000 : 2 * 60_000
+    if (Date.now() - rawReachable.at < ttl) return rawReachable.ok
   }
+  let ok = false
+  try {
+    const res = await request('https://raw.githubusercontent.com/github/gitignore/main/README.md', {
+      timeoutMs: 12000
+    })
+    ok = res.ok
+  } catch {
+    ok = false
+  }
+  rawReachable = { at: Date.now(), ok }
+  return ok
+}
+
+/** 已知分支优先，再试 main / master 兜底（榜单数据里的分支名不一定可信） */
+function branchCandidates(branch?: string): string[] {
+  const list = [branch?.trim(), 'main', 'master'].filter((b): b is string => !!b)
+  return [...new Set(list)]
+}
+
+/** 免配额直连；返回 null 表示「无法判断」，交给 API 兜底 */
+async function readmeViaRaw(
+  owner: string,
+  repo: string,
+  branch?: string
+): Promise<ReadmeResult | null> {
+  for (const b of branchCandidates(branch)) {
+    for (const name of README_NAMES) {
+      const url = `https://raw.githubusercontent.com/${owner}/${repo}/${b}/${name}`
+      let res: Response
+      try {
+        res = await request(url, { timeoutMs: 8000 })
+      } catch {
+        return null // 网络抖断，别在 raw 上耗时间
+      }
+      if (res.status === 200) {
+        const text = await res.text()
+        if (text.trim()) return readmeOk(text, 'raw', name)
+      } else if (res.status !== 404) {
+        return null // 403 之类，换 API 路线
+      }
+    }
+  }
+  return null
+}
+
+/** 走 API 确认：优先取 JSON + base64 自己解码，全程只连 api.github.com */
+async function readmeViaApi(owner: string, repo: string): Promise<ReadmeResult> {
+  try {
+    const j = await ghJson<{ name?: string; content?: string; encoding?: string }>(
+      `${API}/repos/${owner}/${repo}/readme`
+    )
+    if (j?.content) {
+      const raw = String(j.content).replace(/\s+/g, '')
+      const text = Buffer.from(raw, 'base64').toString('utf8')
+      if (text.trim()) return readmeOk(text, 'api', j.name || 'README')
+    }
+    return readmeFail('not-found', '这个仓库没有 README，或者内容为空')
+  } catch (err: any) {
+    const status = err instanceof HttpError ? err.status : 0
+    const detail = err?.message || String(err)
+    if (status === 404) {
+      return readmeFail('not-found', '这个仓库没有 README，或者内容为空')
+    }
+    if (status === 403 || status === 429) {
+      return readmeFail(
+        'rate-limit',
+        'GitHub 接口配额已用尽，暂时读不到 README',
+        err?.hint ||
+          '未登录时每小时只有 60 次请求，浏览榜单很快会用光。到「设置」里填一个 GitHub Token 可以提到 5000 次/小时。'
+      )
+    }
+    if (status === 401) {
+      return readmeFail('auth', 'GitHub Token 无效，读不到 README', err?.hint || '请到「设置」里更新 Token')
+    }
+    return readmeFail('network', `读取 README 失败：${detail}`, err?.hint || '检查网络或代理设置')
+  }
+}
+
+/** 读取 README。失败不抛错，用 code 区分「没有」和「读不到」 */
+export async function readme(owner: string, repo: string, branch?: string): Promise<ReadmeResult> {
+  if (!owner || !repo) return readmeFail('not-found', '仓库信息不完整')
+  if (await canUseRaw()) {
+    const hit = await readmeViaRaw(owner, repo, branch)
+    if (hit) return hit
+  }
+  return readmeViaApi(owner, repo)
 }
 
 function extractDockerRun(md: string): { cmd: string; snippet: string } {
@@ -206,7 +324,7 @@ export async function probeDocker(owner: string, repo: string): Promise<DockerPr
   }
 
   if (!result.hasDockerfile && !result.hasCompose) {
-    const md = await readme(owner, repo)
+    const md = (await readme(owner, repo)).text
     if (md) {
       const { cmd, snippet } = extractDockerRun(md)
       result.readmeDockerRun = cmd

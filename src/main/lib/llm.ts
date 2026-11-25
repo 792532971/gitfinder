@@ -50,6 +50,36 @@ export function extractJson(text: string): any {
   }
 }
 
+/** 发起一次对话，返回模型的原始文本（翻译这类不需要 JSON 的场景用） */
+export async function chatText(
+  messages: ChatMessage[],
+  opts: ChatOptions = {}
+): Promise<string> {
+  const { ai } = loadSettings()
+  if (!ai.apiKey) {
+    throw new Error('还没配置 AI API Key，请打开设置填写（支持 DeepSeek 等 OpenAI 兼容接口）')
+  }
+  const url = buildEndpoint(ai.baseUrl, '/chat/completions')
+  const data = await postJson<any>(
+    url,
+    {
+      model: ai.model,
+      messages,
+      temperature: opts.temperature ?? 0.2,
+      max_tokens: opts.maxTokens ?? 4000,
+      // 纯文本场景默认不开 json_object，否则模型会被逼着输出 JSON
+      ...(opts.jsonMode === true ? { response_format: { type: 'json_object' } } : {})
+    },
+    { Authorization: `Bearer ${ai.apiKey}` },
+    opts.timeoutMs ?? 120000
+  )
+  const content = data?.choices?.[0]?.message?.content
+  if (!content || typeof content !== 'string') {
+    throw new Error('AI 没有返回内容，请检查模型名称是否正确')
+  }
+  return content
+}
+
 /** 发起一次对话并解析成 JSON */
 export async function chatJson(messages: ChatMessage[], opts: ChatOptions = {}): Promise<any> {
   const { ai } = loadSettings()

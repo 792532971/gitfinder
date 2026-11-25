@@ -41,11 +41,12 @@ const api: Api = {
   },
   ai: {
     polish: (text) => call('ai:polish', text),
+    translate: (input) => call('ai:translate', input),
     test: () => call('ai:test')
   },
   github: {
     search: (params) => call('github:search', params),
-    readme: (owner, repo) => call('github:readme', owner, repo),
+    readme: (owner, repo, branch) => call('github:readme', owner, repo, branch),
     probeDocker: (owner, repo) => call('github:probe-docker', owner, repo),
     releases: (owner, repo) => call('github:releases', owner, repo),
     quota: () => call('github:quota')

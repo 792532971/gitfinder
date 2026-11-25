@@ -101,6 +101,12 @@ function cloneFromReadme(repo: RepoItem): void {
   cloneRepo.value = repo
 }
 
+/** README 读不到是因为没 Token 时，直接带到设置页 */
+function openSettingsFromReadme(): void {
+  readmeRepo.value = null
+  settingsOpen.value = true
+}
+
 function switchTab(next: 'search' | 'boards'): void {
   tab.value = next
   localStorage.setItem('gitfinder.tab', next)
@@ -324,6 +330,7 @@ function switchTab(next: 'search' | 'boards'): void {
       @deploy="deployFromReadme"
       @install="installFromReadme"
       @clone="cloneFromReadme"
+      @open-settings="openSettingsFromReadme"
     />
     <Toast />
   </div>
