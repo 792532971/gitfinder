@@ -1,0 +1,55 @@
+{
+  "name": "gitfinder",
+  "version": "1.0.0",
+  "description": "用自然语言搜索 GitHub 项目，一键部署到 WSL Docker 或下载安装",
+  "main": "./out/main/index.js",
+  "author": "shixing",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node scripts/run.mjs dev",
+    "build": "electron-vite build",
+    "preview": "node scripts/run.mjs preview",
+    "dist": "electron-vite build && electron-builder --win",
+    "dist:dir": "electron-vite build && electron-builder --win --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.1.10"
+  },
+  "build": {
+    "appId": "com.shixing.gitfinder",
+    "productName": "GitFinder",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md}"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "GitFinder"
+    }
+  }
+}
