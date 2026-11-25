@@ -39,14 +39,26 @@ export async function fetchQuota(): Promise<QuotaInfo> {
 
   const data: any = await resp.json().catch(() => null)
   const res = data?.resources || {}
+  const core = bucket(res.core)
+  const search = bucket(res.search)
+
+  // 用服务端给的上限判断，而不是「本地填没填」：
+  // 填了个错的 Token 也会被带上去，但 GitHub 只给匿名的 60 次，这里能识破。
+  const AUTHED_CORE_LIMIT = 1000
+  const authenticated = !!token && core.limit >= AUTHED_CORE_LIMIT
+  const tokenInvalid = !!token && core.limit < AUTHED_CORE_LIMIT
+
   return {
-    authenticated: !!token,
-    core: bucket(res.core),
-    search: bucket(res.search),
+    authenticated,
+    tokenInvalid,
+    core,
+    search,
     graphql: res.graphql ? bucket(res.graphql) : null,
     at: Date.now(),
-    note: token
+    note: authenticated
       ? '已配置 Token，配额按账号计算'
-      : '未登录时 core 只有 60 次/小时、search 10 次/分钟，填一个 Token 能提到 5000 次/小时和 30 次/分钟'
+      : tokenInvalid
+        ? '填了 Token 但没生效，多半是复制少了字符或已过期——重新生成一个再填'
+        : '未登录时 core 只有 60 次/小时、search 10 次/分钟，填一个 Token 能提到 5000 次/小时和 30 次/分钟'
   }
 }

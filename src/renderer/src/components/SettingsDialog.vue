@@ -6,6 +6,7 @@ import { state, saveSettings, toast } from '../store'
 import EnvDiagnose from './EnvDiagnose.vue'
 import GithubQuota from './GithubQuota.vue'
 
+const props = defineProps<{ focusToken?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const form = ref<Settings>(JSON.parse(JSON.stringify(state.settings)))
@@ -16,7 +17,14 @@ const testingProxy = ref(false)
 const saving = ref(false)
 const clearingProfiles = ref(false)
 const quotaRef = ref<InstanceType<typeof GithubQuota> | null>(null)
+const tokenInput = ref<HTMLInputElement | null>(null)
 const initialToken = (state.settings.githubToken || '').trim()
+
+/** 配额面板点「未登录」时把光标带到 Token 输入框 */
+function focusToken(): void {
+  tokenInput.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  tokenInput.value?.focus()
+}
 
 async function clearProfiles(): Promise<void> {
   clearingProfiles.value = true
@@ -47,7 +55,11 @@ function onDiagnosed(r: EnvReport): void {
   if (names.length) distros.value = [...new Set([...distros.value, ...names])]
 }
 
-onMounted(loadDistros)
+onMounted(() => {
+  void loadDistros()
+  // 从 README 的「去配置 Token」跳过来时，直接把光标放进输入框
+  if (props.focusToken) setTimeout(focusToken, 250)
+})
 
 async function pickInstallDir(): Promise<void> {
   const dir = await window.api.settings.pickDir('选择默认安装目录')
@@ -96,9 +108,8 @@ async function save(): Promise<void> {
 }
 
 function openTokenPage(): void {
-  window.api.app.openExternal(
-    'https://github.com/settings/tokens/new?scopes=public_repo&description=GitFinder'
-  )
+  // 只读公开数据，不需要勾任何 scope，避免多给写权限
+  window.api.app.openExternal('https://github.com/settings/tokens/new?description=GitFinder')
 }
 
 function openProxyHint(): void {
@@ -124,18 +135,21 @@ function openProxyHint(): void {
           <div class="field">
             <label>Personal Access Token</label>
             <input
+              ref="tokenInput"
               v-model="form.githubToken"
               class="input mono"
               type="password"
               placeholder="ghp_xxxxxxxxxxxx"
             />
             <span class="desc">
-              不填也能用，但搜索接口每分钟只允许 10 次；填了之后提升到 30 次/分钟，且能看到私有仓库。
-              只需要 public_repo 权限。
+              GitHub 不支持账号密码调用接口，「登录」就是填这个 Token。
+              <strong>不填：core 60 次/小时、搜索 10 次/分钟</strong>，浏览几个榜单就耗尽；
+              <strong>填了：core 5000 次/小时、搜索 30 次/分钟</strong>。
+              创建时<strong>不用勾任何权限</strong>（只读公开数据就够），有效期建议选 90 天。
             </span>
           </div>
 
-          <GithubQuota ref="quotaRef" />
+          <GithubQuota ref="quotaRef" @need-token="focusToken" />
 
           <label class="switch" style="margin-top: 10px">
             <input v-model="form.githubFallback" type="checkbox" />

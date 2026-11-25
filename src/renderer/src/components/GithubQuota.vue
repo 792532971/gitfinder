@@ -12,6 +12,13 @@ const loading = ref(false)
 const info = ref<QuotaInfo | null>(null)
 const error = ref('')
 
+const emit = defineEmits<{ (e: 'need-token'): void }>()
+
+/** GitHub 不走账号密码，只认 Personal Access Token */
+function openTokenPage(): void {
+  window.api.app.openExternal('https://github.com/settings/tokens/new?description=GitFinder')
+}
+
 const rows = computed(() => {
   if (!info.value) return [] as { key: string; label: string; desc: string; b: QuotaBucket }[]
   const all = [
@@ -85,9 +92,25 @@ defineExpose({ load })
   <div class="quota">
     <div class="quota-head">
       <span class="quota-title">接口配额</span>
-      <span v-if="info" :class="['auth-tag', info.authenticated ? 'auth-yes' : 'auth-no']">
-        {{ info.authenticated ? '已登录' : '未登录' }}
-      </span>
+      <button
+        v-if="info"
+        :class="[
+          'auth-tag',
+          info.authenticated ? 'auth-yes' : info.tokenInvalid ? 'auth-bad' : 'auth-no',
+          info.authenticated ? '' : 'auth-clickable'
+        ]"
+        :disabled="info.authenticated"
+        :title="info.authenticated ? '已通过 Token 认证' : '点击填写 Token'"
+        @click="emit('need-token')"
+      >
+        {{
+          info.authenticated
+            ? '已登录'
+            : info.tokenInvalid
+              ? 'Token 未生效 · 点此重填'
+              : '未登录 · 点此填 Token'
+        }}
+      </button>
       <button class="btn btn-ghost btn-sm" :disabled="loading" @click="load">
         {{ loading ? '刷新中…' : '刷新' }}
       </button>
@@ -112,8 +135,35 @@ defineExpose({ load })
           <span>{{ resetText(r.b) }}</span>
         </div>
       </div>
+      <div v-if="!info.authenticated" class="auth-guide">
+        <p class="guide-title">
+          {{
+            info.tokenInvalid
+              ? 'Token 填了但没生效'
+              : '「登录」在这里指的是填一个 Personal Access Token'
+          }}
+        </p>
+        <p class="guide-body">
+          <template v-if="info.tokenInvalid">
+            服务端仍按未登录给你额度（core 60 次/小时），说明这个 Token 无效或已过期。
+            常见原因是复制时少了字符、只复制了前缀，或者 Token 已经过期。
+          </template>
+          <template v-else>
+            GitHub 不支持用账号密码调用接口，只认 Token。不填的话 core 只有 60 次/小时，
+            浏览两三个榜单就耗尽，之后 README、Release、追踪榜都会失败；
+            填上之后提升到 5000 次/小时。
+          </template>
+        </p>
+        <div class="row" :style="{ gap: '8px', marginTop: '8px' }">
+          <button class="btn btn-sm btn-primary" @click="openTokenPage">去 GitHub 创建 Token</button>
+          <button class="btn btn-sm" @click="emit('need-token')">
+            {{ info.tokenInvalid ? '重新填写' : '已经有了，去填写' }}
+          </button>
+        </div>
+      </div>
       <p v-if="lowWarn" class="quota-warn">{{ lowWarn }}</p>
-      <p class="quota-note">{{ info.note }}</p>
+      <!-- 未登录时上面的引导块已经把话说完了，这句 note 会重复 -->
+      <p v-if="info.authenticated" class="quota-note">{{ info.note }}</p>
     </div>
   </div>
 </template>
@@ -142,6 +192,17 @@ defineExpose({ load })
   font-size: 10.5px;
   padding: 1px 6px;
   border-radius: 3px;
+  border: 1px solid transparent;
+  font-family: inherit;
+}
+.auth-clickable {
+  cursor: pointer;
+  border-style: dashed;
+}
+.auth-clickable:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .auth-yes {
   background: var(--green-soft);
@@ -150,6 +211,27 @@ defineExpose({ load })
 .auth-no {
   background: #eceff3;
   color: var(--text-3);
+}
+.auth-bad {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.auth-guide {
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+}
+.guide-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.guide-body {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.6;
 }
 .quota-err {
   margin-top: 8px;

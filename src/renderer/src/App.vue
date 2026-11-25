@@ -24,6 +24,7 @@ const tab = ref<'search' | 'boards'>(
   localStorage.getItem('gitfinder.tab') === 'boards' ? 'boards' : 'search'
 )
 const settingsOpen = ref(false)
+const settingsFocusToken = ref(false)
 const trackedNames = ref<string[]>([])
 const trackedSet = computed(() => new Set(trackedNames.value))
 const deployRepo = ref<RepoItem | null>(null)
@@ -104,6 +105,7 @@ function cloneFromReadme(repo: RepoItem): void {
 /** README 读不到是因为没 Token 时，直接带到设置页 */
 function openSettingsFromReadme(): void {
   readmeRepo.value = null
+  settingsFocusToken.value = true
   settingsOpen.value = true
 }
 
@@ -319,7 +321,11 @@ function switchTab(next: 'search' | 'boards'): void {
       @tracked-change="trackedNames = $event"
     />
 
-    <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
+    <SettingsDialog
+      v-if="settingsOpen"
+      :focus-token="settingsFocusToken"
+      @close="settingsOpen = false; settingsFocusToken = false"
+    />
     <DeployDialog v-if="deployRepo" :repo="deployRepo" @close="deployRepo = null" />
     <CloneDialog v-if="cloneRepo" :repo="cloneRepo" @close="cloneRepo = null" />
     <InstallDialog v-if="installRepo" :repo="installRepo" @close="installRepo = null" />

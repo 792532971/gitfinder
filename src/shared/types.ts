@@ -42,8 +42,10 @@ export interface QuotaBucket {
 }
 
 export interface QuotaInfo {
-  /** 是否带了 Token */
+  /** 配额真的按登录账号算了（以服务端 limit 为准，不是看本地有没有填） */
   authenticated: boolean
+  /** 本地填了 Token，但服务端仍按未登录给额度——通常是 Token 无效或过期 */
+  tokenInvalid: boolean
   /** core：仓库详情 / README / Release 等 */
   core: QuotaBucket
   /** search：搜索与榜单 */
