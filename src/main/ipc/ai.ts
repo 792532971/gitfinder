@@ -273,6 +273,28 @@ export async function translate(input: {
   }
 }
 
+/** 真发一次极小的对话，确认模型名真的可用（/models 列表不一定全） */
+async function probeChat(): Promise<{ ok: boolean; message: string }> {
+  const { ai } = loadSettings()
+  try {
+    const r = await postJson<any>(
+      buildEndpoint(ai.baseUrl, '/chat/completions'),
+      {
+        model: ai.model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        temperature: 0
+      },
+      { Authorization: `Bearer ${ai.apiKey}` },
+      30000
+    )
+    if (r?.choices?.length) return { ok: true, message: `连接成功，模型 ${ai.model} 可正常对话` }
+    return { ok: false, message: `接口返回异常：${JSON.stringify(r).slice(0, 160)}` }
+  } catch (err: any) {
+    return { ok: false, message: err?.hint || err?.message || String(err) }
+  }
+}
+
 export async function test(): Promise<{ ok: boolean; message: string }> {
   const { ai } = loadSettings()
   if (!ai.apiKey) return { ok: false, message: '请先填写 API Key' }
@@ -291,24 +313,28 @@ export async function test(): Promise<{ ok: boolean; message: string }> {
         /* ignore */
       }
       const hit = models.find((m) => m === ai.model)
+      if (hit) return { ok: true, message: `连接成功，模型 ${ai.model} 可用` }
+
+      // 列表里没有这个模型名，别急着报警：/models 经常只列一部分，
+      // 直接发一次最小对话，能通就说明配置正确。
+      const probe = await probeChat()
+      if (probe.ok) {
+        return {
+          ok: true,
+          message: `${probe.message}（${ai.baseUrl} 的模型列表里没列 ${ai.model}，不影响调用${
+            models.length ? `；列表中是 ${models.slice(0, 4).join(', ')}` : ''
+          }）`
+        }
+      }
       return {
-        ok: true,
-        message: hit
-          ? `连接成功，模型 ${ai.model} 可用`
-          : models.length
-            ? `连接成功。当前模型 ${ai.model} 未在列表中出现，可用模型：${models.slice(0, 6).join(', ')}`
-            : `连接成功`
+        ok: false,
+        message: models.length
+          ? `${probe.message}。当前模型 ${ai.model} 不在可用列表里，试试：${models.slice(0, 6).join(', ')}`
+          : probe.message
       }
     }
     // /models 不被支持时，用一次极小对话兜底验证
-    const fallback = await postJson<any>(
-      buildEndpoint(ai.baseUrl, '/chat/completions'),
-      { model: ai.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 },
-      { Authorization: `Bearer ${ai.apiKey}` },
-      30000
-    )
-    if (fallback?.choices?.length) return { ok: true, message: `连接成功，模型 ${ai.model} 可用` }
-    return { ok: false, message: `接口返回异常：${JSON.stringify(fallback).slice(0, 160)}` }
+    return await probeChat()
   } catch (err: any) {
     return { ok: false, message: err?.hint || err?.message || String(err) }
   }
