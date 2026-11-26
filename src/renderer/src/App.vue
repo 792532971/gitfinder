@@ -25,6 +25,8 @@ const tab = ref<'search' | 'boards'>(
 )
 const settingsOpen = ref(false)
 const settingsFocusToken = ref(false)
+const settingsFocusAi = ref(false)
+const boardsRef = ref<InstanceType<typeof BoardsView> | null>(null)
 const trackedNames = ref<string[]>([])
 const trackedSet = computed(() => new Set(trackedNames.value))
 const deployRepo = ref<RepoItem | null>(null)
@@ -107,6 +109,23 @@ function openSettingsFromReadme(): void {
   readmeRepo.value = null
   settingsFocusToken.value = true
   settingsOpen.value = true
+}
+
+/** 榜单里点「译成中文」但还没配 AI：带到设置页并滚到 AI 区块 */
+function openSettingsForAi(): void {
+  settingsFocusAi.value = true
+  settingsOpen.value = true
+}
+
+function closeSettings(): void {
+  settingsOpen.value = false
+  settingsFocusToken.value = false
+  settingsFocusAi.value = false
+}
+
+/** AI 配置动过（换模型 / 填上 Key），让榜单用新配置把中文说明重算一遍 */
+function onAiChanged(): void {
+  boardsRef.value?.refresh()
 }
 
 function switchTab(next: 'search' | 'boards'): void {
@@ -312,19 +331,22 @@ function switchTab(next: 'search' | 'boards'): void {
 
     <BoardsView
       v-if="tab === 'boards'"
+      ref="boardsRef"
       @deploy="deployRepo = $event"
       @install="installRepo = $event"
       @detail="readmeRepo = $event"
       @clone="cloneRepo = $event"
       @go-search="switchTab('search')"
-      @open-settings="settingsOpen = true"
+      @open-settings="openSettingsForAi"
       @tracked-change="trackedNames = $event"
     />
 
     <SettingsDialog
       v-if="settingsOpen"
       :focus-token="settingsFocusToken"
-      @close="settingsOpen = false; settingsFocusToken = false"
+      :focus-ai="settingsFocusAi"
+      @close="closeSettings"
+      @ai-changed="onAiChanged"
     />
     <DeployDialog v-if="deployRepo" :repo="deployRepo" @close="deployRepo = null" />
     <CloneDialog v-if="cloneRepo" :repo="cloneRepo" @close="cloneRepo = null" />

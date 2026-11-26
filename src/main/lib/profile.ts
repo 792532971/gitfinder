@@ -6,7 +6,8 @@
  *   1. AI 生成（主路径）：批量把仓库元数据交给模型，产出中文用途 / 分类 / 安装方式 / 上手难度。
  *      结果按 full_name + pushed_at 落盘缓存 14 天，换榜单复用，不会重复烧 token。
  *   2. 元数据推测（降级路径）：没配 AI 或调用失败时，从 topics / 语言 / 简介里猜安装方式，
- *      并明确标记 source=heuristic，界面会写「推测」。
+ *      并明确标记 source=heuristic，界面会写「推测」——此时用途一栏仍是英文原简介，
+ *      用户可以在榜单上点「译成中文」单条补翻。
  */
 import { app } from 'electron'
 import fs from 'node:fs'
@@ -31,8 +32,8 @@ const TTL = 14 * 86400000
 const BATCH = 8
 /** 同时只跑两个请求：再快模型也扛不住，还容易触发限流 */
 const CONCURRENCY = 2
-/** 一次最多补齐 40 条，够覆盖一屏榜单 */
-const MAX_ITEMS = 40
+/** 一次最多补齐 60 条：榜单最长 50 条，留点余量，避免排在后面的永远拿不到中文 */
+const MAX_ITEMS = 60
 
 let mem: Record<string, Entry> | null = null
 let persistTimer: NodeJS.Timeout | null = null

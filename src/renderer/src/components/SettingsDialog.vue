@@ -6,8 +6,8 @@ import { state, saveSettings, toast } from '../store'
 import EnvDiagnose from './EnvDiagnose.vue'
 import GithubQuota from './GithubQuota.vue'
 
-const props = defineProps<{ focusToken?: boolean }>()
-const emit = defineEmits<{ (e: 'close'): void }>()
+const props = defineProps<{ focusToken?: boolean; focusAi?: boolean }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'ai-changed'): void }>()
 
 const form = ref<Settings>(JSON.parse(JSON.stringify(state.settings)))
 const distros = ref<string[]>([])
@@ -18,7 +18,11 @@ const saving = ref(false)
 const clearingProfiles = ref(false)
 const quotaRef = ref<InstanceType<typeof GithubQuota> | null>(null)
 const tokenInput = ref<HTMLInputElement | null>(null)
+const aiGroup = ref<HTMLElement | null>(null)
+const aiKeyInput = ref<HTMLInputElement | null>(null)
 const initialToken = (state.settings.githubToken || '').trim()
+/** 保存前记下 AI 配置，变过才让榜单重新用新模型补中文 */
+const initialAi = `${(state.settings.ai.apiKey || '').trim()}|${state.settings.ai.enrich}|${state.settings.ai.baseUrl}|${state.settings.ai.model}`
 
 /** 配额面板点「未登录」时把光标带到 Token 输入框 */
 function focusToken(): void {
@@ -59,19 +63,46 @@ onMounted(() => {
   void loadDistros()
   // 从 README 的「去配置 Token」跳过来时，直接把光标放进输入框
   if (props.focusToken) setTimeout(focusToken, 250)
+  // 从榜单的「译成中文」跳过来时，滚到 AI 区块并聚焦 Key
+  if (props.focusAi) {
+    setTimeout(() => {
+      focusAiSection()
+    }, 400)
+  }
 })
+
+/** 把 AI 区块滚进可视区。弹窗有自己的滚动容器（.modal-body），
+ *  且带进场动画，直接 scrollIntoView 经常滚不动，这里按几何差值手动定位。
+ *  用即时滚动而不是 smooth：弹窗刚打开就要落到目标位置，动画反而像卡顿。 */
+function focusAiSection(): void {
+  const group = aiGroup.value
+  if (!group) return
+  const box = group.closest('.modal-body') as HTMLElement | null
+  if (box) {
+    const delta = group.getBoundingClientRect().top - box.getBoundingClientRect().top
+    box.scrollTop = Math.max(0, box.scrollTop + delta - 8)
+  }
+  aiKeyInput.value?.focus({ preventScroll: true })
+}
 
 async function pickInstallDir(): Promise<void> {
   const dir = await window.api.settings.pickDir('选择默认安装目录')
   if (dir) form.value.installDir = dir
 }
 
+/** 当前表单里的 AI 配置指纹，用来判断保存后要不要让榜单重新补中文 */
+function aiSignature(): string {
+  return `${(form.value.ai.apiKey || '').trim()}|${form.value.ai.enrich}|${form.value.ai.baseUrl}|${form.value.ai.model}`
+}
+
 async function testAi(): Promise<void> {
   testingAi.value = true
   try {
+    const aiChanged = aiSignature() !== initialAi
     await saveSettings(form.value)
     const r = await window.api.ai.test()
     toast(r.message, r.ok ? 'ok' : 'error', r.ok ? 4000 : 7000)
+    if (aiChanged && r.ok) emit('ai-changed')
   } catch (err: any) {
     toast(`测试失败：${err.message}`, 'error', 6000)
   } finally {
@@ -95,10 +126,12 @@ async function testProxy(): Promise<void> {
 async function save(): Promise<void> {
   saving.value = true
   try {
+    const aiChanged = aiSignature() !== initialAi
     await saveSettings(form.value)
     // Token 变了，配额要按新身份重新查
     if ((form.value.githubToken || '').trim() !== initialToken) void quotaRef.value?.load()
     toast('设置已保存', 'ok')
+    if (aiChanged) emit('ai-changed')
     emit('close')
   } catch (err: any) {
     toast(`保存失败：${err.message}`, 'error')
@@ -183,7 +216,7 @@ function openProxyHint(): void {
         </div>
 
         <!-- AI -->
-        <div class="group">
+        <div ref="aiGroup" class="group">
           <div class="group-title">
             AI 润色
             <div class="row">
@@ -207,6 +240,7 @@ function openProxyHint(): void {
           <div class="field" style="margin-top: 12px">
             <label>API Key</label>
             <input
+              ref="aiKeyInput"
               v-model="form.ai.apiKey"
               class="input mono"
               type="password"
@@ -225,7 +259,7 @@ function openProxyHint(): void {
             <input v-model="form.ai.enrich" type="checkbox" />
             <span class="track"></span>
             <span class="tiny">
-              榜单自动生成中文用途与安装方式（每榜最多 40 个项目，结果缓存在本机 14 天，重复浏览不再消耗额度）
+              榜单自动生成中文用途与安装方式（每榜最多 60 个项目，结果缓存在本机 14 天，重复浏览不再消耗额度）
             </span>
           </label>
           <div class="row" style="margin-top: 10px">

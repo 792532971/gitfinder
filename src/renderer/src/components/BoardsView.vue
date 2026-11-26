@@ -168,6 +168,24 @@ async function enrichNow(): Promise<void> {
   if (force) toast('正在重新生成中文说明', 'ok', 2000)
 }
 
+/**
+ * 单条补中文（卡片上「推测 · 译成中文」按钮）。
+ * 没配 AI 时翻译无从谈起，直接把用户送去设置页；配了就只把这一个仓库塞进队列，
+ * 不重跑整榜——长榜单里补一条只花一条的 token。
+ */
+async function translateOne(item: BoardItem): Promise<void> {
+  if (!aiReady.value) {
+    toast('生成中文说明需要先配置 AI', 'warn', 4000)
+    emit('open-settings')
+    return
+  }
+  if (enriching.value) return
+  await requestProfiles([item], true)
+  toast('正在生成中文说明…', 'ok', 2000)
+}
+
+defineExpose({ refresh: () => load(false) })
+
 /** 主进程分批回传，按 full_name 合并进当前榜单 */
 function onProfiles(e: ProfileUpdateEvent): void {
   if (e.scope && e.scope !== boardId.value) return
@@ -379,6 +397,7 @@ onUnmounted(() => {
           @install="emit('install', $event)"
           @detail="emit('detail', $event)"
           @clone="emit('clone', $event)"
+          @translate="translateOne"
           @track="toggleTrack"
         />
         <p v-if="def.kind === 'tracked' && !items.some((i) => i.starDelta)" class="foot-hint tiny">

@@ -11,6 +11,7 @@ const emit = defineEmits<{
   (e: 'detail', repo: BoardItem): void
   (e: 'clone', repo: BoardItem): void
   (e: 'track', repo: BoardItem): void
+  (e: 'translate', repo: BoardItem): void
 }>()
 
 const medal = computed(() => {
@@ -29,6 +30,8 @@ const level = computed(() => profile.value?.level || '')
 const platforms = computed(() => profile.value?.platforms || [])
 const guessed = computed(() => profile.value?.source === 'heuristic')
 const deployable = computed(() => !!profile.value?.deployable)
+/** 没有中文用途、只有英文简介——这时才需要「译成中文」的入口 */
+const noChinese = computed(() => !purpose.value && !!props.item.description)
 
 const platformHint = computed(() =>
   platforms.value.length ? `支持平台：${platforms.value.join('、')}` : ''
@@ -105,7 +108,7 @@ async function copyInstall(o: InstallOption): Promise<void> {
         {{ item.description }}
       </p>
 
-      <div v-if="category || installs.length || level" class="tags">
+      <div v-if="category || installs.length || level || guessed || noChinese" class="tags">
         <span v-if="category" class="tag cat">{{ category }}</span>
         <button
           v-for="o in installs"
@@ -118,12 +121,18 @@ async function copyInstall(o: InstallOption): Promise<void> {
           <i class="ico"></i>{{ o.label }}
         </button>
         <span v-if="level" class="tag level" :title="platformHint">上手{{ level }}</span>
-        <span
-          v-if="guessed"
-          class="tag guess"
-          title="未配置 AI 或 AI 调用失败，这部分是按 topics / 语言 / 简介推测的，仅供参考"
-          >推测</span
+        <button
+          v-if="guessed || noChinese"
+          class="tag guess guess-btn"
+          :title="
+            guessed
+              ? '安装方式是按 topics / 语言推测的；点击用 AI 生成完整中文说明'
+              : '现在显示的是英文原简介，点击用 AI 译成中文'
+          "
+          @click="emit('translate', item)"
         >
+          {{ guessed ? '推测 · 译成中文' : '译成中文' }}
+        </button>
       </div>
 
       <div class="meta">
@@ -401,6 +410,21 @@ async function copyInstall(o: InstallOption): Promise<void> {
   border-color: var(--border-strong);
   background: transparent;
   color: var(--text-3);
+}
+/* 可点击的「译成中文」：默认低调，hover 才显出可操作性，避免每行都抢眼 */
+.tag.guess-btn {
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.tag.guess-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.tag.guess-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 .meta {
   display: flex;
