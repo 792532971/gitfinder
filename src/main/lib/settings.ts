@@ -43,6 +43,22 @@ function deepMerge<T>(base: T, patch: any): T {
   return out as T
 }
 
+/**
+ * 清洗用户填进来的 Token。常见手误：
+ * 带引号、带 "Bearer " 前缀、把整行 Authorization: xxx 粘进来、末尾带逗号或空格。
+ * 这些都会让 GitHub 直接按匿名处理（配额仍是 60），所以统一在这里剥掉。
+ */
+export function normalizeToken(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  let t = raw.trim()
+  if (!t) return ''
+  t = t.replace(/^authorization\s*:\s*/i, '')
+  t = t.replace(/^(bearer|token)\s+/i, '')
+  t = t.replace(/^["'`]+/, '').replace(/["'`]+$/, '')
+  t = t.replace(/[,;]+$/, '')
+  return t.trim()
+}
+
 export function loadSettings(): Settings {
   if (cache) return cache
   try {
@@ -51,11 +67,13 @@ export function loadSettings(): Settings {
   } catch {
     cache = { ...DEFAULT_SETTINGS }
   }
+  cache!.githubToken = normalizeToken(cache!.githubToken)
   return cache!
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
   const next = deepMerge(loadSettings(), patch)
+  next.githubToken = normalizeToken(next.githubToken)
   cache = next
   try {
     const dir = path.dirname(settingsFile())

@@ -69,8 +69,8 @@ const lowWarn = computed(() => {
     : 'core 配额快用尽了。未登录每小时只有 60 次，填一个 Token 可以提到 5000 次/小时'
 })
 
-async function load(): Promise<void> {
-  if (loading.value) return
+async function load(): Promise<{ info: QuotaInfo | null; error: string }> {
+  if (loading.value) return { info: info.value, error: error.value }
   loading.value = true
   error.value = ''
   try {
@@ -81,6 +81,7 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false
   }
+  return { info: info.value, error: error.value }
 }
 
 onMounted(load)
@@ -145,8 +146,9 @@ defineExpose({ load })
         </p>
         <p class="guide-body">
           <template v-if="info.tokenInvalid">
-            服务端仍按未登录给你额度（core 60 次/小时），说明这个 Token 无效或已过期。
-            常见原因是复制时少了字符、只复制了前缀，或者 Token 已经过期。
+            GitHub 没有认这个 Token（401），服务端仍按未登录给你额度。
+            常见原因是复制时少了字符、只复制了前缀、Token 已被删除或已过期。
+            注意：Token 只在创建时显示一次，忘了就只能重新生成。
           </template>
           <template v-else>
             GitHub 不支持用账号密码调用接口，只认 Token。不填的话 core 只有 60 次/小时，
@@ -154,6 +156,7 @@ defineExpose({ load })
             填上之后提升到 5000 次/小时。
           </template>
         </p>
+        <p v-if="info.tokenInvalid && info.note" class="guide-note">{{ info.note }}</p>
         <div class="row" :style="{ gap: '8px', marginTop: '8px' }">
           <button class="btn btn-sm btn-primary" @click="openTokenPage">去 GitHub 创建 Token</button>
           <button class="btn btn-sm" @click="emit('need-token')">
@@ -232,6 +235,12 @@ defineExpose({ load })
   font-size: 11.5px;
   color: var(--text-2);
   line-height: 1.6;
+}
+.guide-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--red);
+  line-height: 1.55;
 }
 .quota-err {
   margin-top: 8px;

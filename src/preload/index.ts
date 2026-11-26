@@ -49,7 +49,8 @@ const api: Api = {
     readme: (owner, repo, branch) => call('github:readme', owner, repo, branch),
     probeDocker: (owner, repo) => call('github:probe-docker', owner, repo),
     releases: (owner, repo) => call('github:releases', owner, repo),
-    quota: () => call('github:quota')
+    quota: () => call('github:quota'),
+    verifyToken: (token: string) => call('github:verify-token', token)
   },
   deploy: {
     plan: (input) => call('deploy:plan', input),

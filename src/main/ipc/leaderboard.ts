@@ -10,7 +10,7 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { request, ghJson, HttpError } from '../lib/http'
+import { request, ghJson, HttpError, ghHeaders } from '../lib/http'
 import { loadSettings } from '../lib/settings'
 import {
   BOARD_MAP,
@@ -183,14 +183,7 @@ async function mapLimit<T, R>(
 }
 
 function apiHeaders(): Record<string, string> {
-  const token = loadSettings().githubToken?.trim()
-  const h: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'GitFinder'
-  }
-  if (token) h.Authorization = `Bearer ${token}`
-  return h
+  return ghHeaders({ 'User-Agent': 'GitFinder' })
 }
 
 async function raiseForStatus(res: Response, url: string): Promise<never> {

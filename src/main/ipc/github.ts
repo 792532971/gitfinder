@@ -1,5 +1,4 @@
-import { ghJson, ghText, exists, request, HttpError } from '../lib/http'
-import { loadSettings } from '../lib/settings'
+import { ghJson, ghText, exists, request, HttpError, ghHeaders } from '../lib/http'
 import type {
   SearchParams,
   SearchResponse,
@@ -66,14 +65,8 @@ export async function search(params: SearchParams): Promise<SearchResponse> {
 }
 
 async function fetchWithRateInfo(url: string): Promise<SearchResponse> {
-  const token = loadSettings().githubToken?.trim()
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28'
-  }
-  if (token) headers.Authorization = `Bearer ${token}`
-
-  const resp = await request(url, { headers })
+  // 必须带 Token 头，否则搜索按匿名算（10 次/分钟），填了 Token 也白填
+  const resp = await request(url, { headers: ghHeaders() })
   const remaining = resp.headers.get('x-ratelimit-remaining')
   const reset = resp.headers.get('x-ratelimit-reset')
 

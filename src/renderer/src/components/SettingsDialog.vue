@@ -127,9 +127,27 @@ async function save(): Promise<void> {
   saving.value = true
   try {
     const aiChanged = aiSignature() !== initialAi
+    const tokenInput = (form.value.githubToken || '').trim()
+    const tokenChanged = tokenInput !== initialToken
+
+    // 先验 Token，再落盘：无效就不保存、不关弹窗，直接说清楚无效的原因
+    if (tokenChanged && tokenInput) {
+      const v = await window.api.github.verifyToken(tokenInput)
+      if (!v.ok) {
+        toast(`Token 没生效：${v.message}`, 'error', 9000)
+        saving.value = false
+        return
+      }
+      await saveSettings(form.value)
+      form.value.githubToken = state.settings.githubToken
+      await quotaRef.value?.load()
+      toast(`${v.message}`, 'ok', 4000)
+      if (aiChanged) emit('ai-changed')
+      emit('close')
+      return
+    }
+
     await saveSettings(form.value)
-    // Token 变了，配额要按新身份重新查
-    if ((form.value.githubToken || '').trim() !== initialToken) void quotaRef.value?.load()
     toast('设置已保存', 'ok')
     if (aiChanged) emit('ai-changed')
     emit('close')

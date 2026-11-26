@@ -1,7 +1,7 @@
 import { app, ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import { loadSettings, saveSettings, applyProxy, userDataDir } from '../lib/settings'
 import { search, readme, probeDocker, releases } from './github'
-import { fetchQuota } from './quota'
+import { fetchQuota, verifyToken } from './quota'
 import { polish, test as testAi, translate } from './ai'
 import * as deploy from './deploy'
 import * as clone from './clone'
@@ -87,6 +87,7 @@ export function registerIpc(): void {
     releases(owner, repo)
   )
   handle('github:quota', async () => fetchQuota())
+  handle('github:verify-token', async (_e, token: string) => verifyToken(token))
 
   // ---------- deploy ----------
   handle('deploy:plan', async (_e, input: any) => deploy.plan(input))

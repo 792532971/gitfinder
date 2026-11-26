@@ -122,6 +122,10 @@ src/
 **打包时 winCodeSign 解压失败？**
 `electron-builder` 下载的 winCodeSign 含 macOS 符号链接，Windows 无权限解压。项目里已设 `win.signAndEditExecutable: false` 绕过，代价是 exe 使用默认图标与元数据。
 
+**填了 Token 还是提示「Token 未生效」？**
+先确认 Token 是 `ghp_` / `github_pat_` 开头的一整串（40 位以上），中间没有空格或换行；再确认没在 GitHub 里被删除、没过期。现在保存设置时会先拿这个 Token 请求一次 `/rate_limit` 验证，验不过就不会写入，弹窗会留着并说明原因。如果 Token 是在别的机器或旧版应用里填的，删掉 `%APPDATA%\gitfinder\settings.json` 里的 `githubToken` 再填一次。
+另外，Token 只在创建页面显示一次，忘了原文只能重新生成一个（旧的可顺手删掉）。
+
 **部署时报 Docker 不可用？**
 在目标发行版里确认 `docker info` 能跑通；`permission denied` 一般是没加进 docker 组（`sudo usermod -aG docker $USER` 后重开 WSL）。
 

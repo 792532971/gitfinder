@@ -1,5 +1,5 @@
 import { net } from 'electron'
-import { loadSettings } from './settings'
+import { loadSettings, normalizeToken } from './settings'
 
 export class HttpError extends Error {
   status: number
@@ -21,15 +21,24 @@ export interface RequestOptions {
   timeoutMs?: number
 }
 
-function baseHeaders(): Record<string, string> {
-  const { githubToken } = loadSettings()
+/**
+ * GitHub 请求的公共头（含 Token）。
+ * 注意：走 request() 直连的调用方必须自己带上这个头，否则请求会以匿名身份发出，
+ * 配额按 60 次/小时算——「填了 Token 却不生效」通常就是这个原因。
+ * tokenOverride 用于「保存前先验证表单里这个 Token」，避免去读还没落盘的设置。
+ */
+export function ghHeaders(
+  extra: Record<string, string> = {},
+  tokenOverride?: string
+): Record<string, string> {
   const h: Record<string, string> = {
     Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28'
+    'X-GitHub-Api-Version': '2022-11-28',
+    ...extra
   }
-  if (githubToken && githubToken.trim()) {
-    h.Authorization = `Bearer ${githubToken.trim()}`
-  }
+  const token =
+    tokenOverride === undefined ? normalizeToken(loadSettings().githubToken) : normalizeToken(tokenOverride)
+  if (token) h.Authorization = `Bearer ${token}`
   return h
 }
 
@@ -100,7 +109,7 @@ async function toError(res: Response): Promise<HttpError> {
 export async function ghJson<T>(url: string, opts: RequestOptions = {}): Promise<T> {
   const res = await request(url, {
     ...opts,
-    headers: { ...baseHeaders(), ...(opts.headers || {}) }
+    headers: ghHeaders(opts.headers || {})
   })
   if (!res.ok) throw await toError(res)
   return (await res.json()) as T
@@ -109,7 +118,7 @@ export async function ghJson<T>(url: string, opts: RequestOptions = {}): Promise
 /** GitHub API 请求，返回纯文本（用于 README 等） */
 export async function ghText(url: string, accept = 'application/vnd.github.raw'): Promise<string> {
   const res = await request(url, {
-    headers: { ...baseHeaders(), Accept: accept }
+    headers: ghHeaders({ Accept: accept })
   })
   if (!res.ok) throw await toError(res)
   return await res.text()

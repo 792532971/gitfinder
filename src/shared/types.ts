@@ -407,6 +407,8 @@ export interface Api {
     releases: (owner: string, repo: string) => Promise<ReleaseInfo | null>
     /** 查询当前接口配额（core / search 两个独立池子） */
     quota: () => Promise<QuotaInfo>
+    /** 保存前验证一个 Token 是否真的被 GitHub 认（不消耗配额） */
+    verifyToken: (token: string) => Promise<{ ok: boolean; limit: number; message: string }>
   }
   deploy: {
     plan: (input: {
