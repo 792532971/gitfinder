@@ -1,4 +1,5 @@
 import { ghJson, ghText, exists, request, HttpError, ghHeaders } from '../lib/http'
+import { attach } from '../lib/profile'
 import type {
   SearchParams,
   SearchResponse,
@@ -95,7 +96,8 @@ async function fetchWithRateInfo(url: string): Promise<SearchResponse> {
   }
 
   const data: any = await resp.json()
-  const items: RepoItem[] = (data.items || []).map(mapRepo)
+  // 顺手挂上已缓存的中文简介：搜过 / 上过榜的仓库不必再花一次 token
+  const items = attach((data.items || []).map(mapRepo) as RepoItem[])
   const urlObj = new URL(url)
   return {
     total: data.total_count || 0,

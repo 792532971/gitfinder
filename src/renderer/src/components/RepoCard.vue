@@ -1,15 +1,28 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { RepoItem } from '../../../shared/types'
 import { formatNumber, timeAgo, langColor } from '../utils'
 
-const props = defineProps<{ repo: RepoItem; index: number; tracked?: boolean }>()
+const props = defineProps<{
+  repo: RepoItem
+  index: number
+  tracked?: boolean
+  /** 中文简介是否显示（工具栏开关） */
+  zh?: boolean
+}>()
 const emit = defineEmits<{
   (e: 'deploy', repo: RepoItem): void
   (e: 'install', repo: RepoItem): void
   (e: 'detail', repo: RepoItem): void
   (e: 'track', repo: RepoItem): void
   (e: 'clone', repo: RepoItem): void
+  (e: 'translate', repo: RepoItem): void
 }>()
+
+/** AI 生成的中文一句话；没有就退回英文原文 */
+const zhDesc = computed(() => (props.zh ? props.repo.profile?.purpose || '' : ''))
+/** 有中文时英文压成一行灰字做对照 */
+const showEn = computed(() => !!zhDesc.value && !!props.repo.description)
 
 function openRepo(): void {
   window.api.app.openExternal(props.repo.html_url)
@@ -38,7 +51,9 @@ function openRepo(): void {
       </div>
     </div>
 
-    <p class="desc">{{ repo.description || '这个项目没有写简介' }}</p>
+    <p v-if="zhDesc" class="desc">{{ zhDesc }}</p>
+    <p v-else class="desc">{{ repo.description || '这个项目没有写简介' }}</p>
+    <p v-if="showEn" class="desc desc-en" :title="repo.description">{{ repo.description }}</p>
 
     <div v-if="repo.topics.length" class="topics">
       <span v-for="t in repo.topics.slice(0, 6)" :key="t" class="badge topic">{{ t }}</span>
@@ -88,6 +103,14 @@ function openRepo(): void {
           <path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6L8 1.8Z" />
         </svg>
         {{ tracked ? '已追踪' : '追踪' }}
+      </button>
+      <button
+        v-if="zh && !zhDesc && repo.description"
+        class="btn btn-sm btn-zh"
+        title="用 AI 把这段英文简介译成中文"
+        @click="emit('translate', repo)"
+      >
+        译成中文
       </button>
       <button class="btn btn-sm" @click="emit('detail', repo)">查看 README</button>
       <button class="btn btn-sm" title="git clone 到指定目录" @click="emit('clone', repo)">
@@ -191,6 +214,22 @@ function openRepo(): void {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+/* 有中文时，英文原文压成一行灰字，想看原话还能对照 */
+.desc-en {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.btn-zh {
+  color: var(--accent);
+  border-color: #cfe0fd;
+  background: var(--accent-soft);
+}
+.btn-zh:hover {
+  background: #dbe8fe;
 }
 .topics {
   display: flex;

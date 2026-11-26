@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import {
   state,
   loadSettings,
@@ -7,7 +7,13 @@ import {
   fetchResults,
   changePage,
   applyFilter,
-  toast
+  toast,
+  searchZh,
+  applySearchProfiles,
+  setZhDesc,
+  enrichSearchResults,
+  translateSearchOne,
+  aiProfileReady
 } from './store'
 import { LANGUAGES, SORT_OPTIONS, formatNumber } from './utils'
 import type { RepoItem } from '../../shared/types'
@@ -46,15 +52,48 @@ const examples = [
 
 const pageCount = computed(() => Math.min(Math.ceil(state.total / state.perPage), 34))
 
+/** 中文简介的进度/异常提示，放在筛选栏右侧 */
+const zhHint = computed(() => {
+  if (!state.zhDesc) return ''
+  if (searchZh.error) return `AI 翻译失败：${searchZh.error}`
+  if (!aiProfileReady()) return '未配置 AI，简介保持英文原文'
+  if (searchZh.running) {
+    const done = Math.min(searchZh.finished, searchZh.total)
+    return searchZh.total ? `AI 正在译中文简介 ${done}/${searchZh.total}` : 'AI 正在译中文简介…'
+  }
+  const hit = state.results.filter((r) => r.profile?.purpose).length
+  return hit ? `${hit} 个已译成中文` : ''
+})
+
+/** 主进程回传的画像，scope=search 的给搜索结果用 */
+let offProfiles: (() => void) | null = null
+
 onMounted(async () => {
   await loadSettings()
   queryInput.value?.focus()
+  offProfiles = window.api.events.onBoardProfiles(applySearchProfiles)
   try {
     trackedNames.value = await window.api.board.tracked()
   } catch {
     trackedNames.value = []
   }
 })
+
+onUnmounted(() => offProfiles?.())
+
+function onZhToggle(e: Event): void {
+  setZhDesc((e.target as HTMLInputElement).checked)
+}
+
+/** 卡片上单条翻译：没配 AI 就先带到设置页 */
+function translateRepo(repo: RepoItem): void {
+  if (!aiProfileReady()) {
+    toast('翻译成中文需要先配置 AI', 'warn', 4000)
+    openSettingsForAi()
+    return
+  }
+  void translateSearchOne(repo)
+}
 
 async function toggleTrack(repo: RepoItem): Promise<void> {
   try {
@@ -123,9 +162,10 @@ function closeSettings(): void {
   settingsFocusAi.value = false
 }
 
-/** AI 配置动过（换模型 / 填上 Key），让榜单用新配置把中文说明重算一遍 */
+/** AI 配置动过（换模型 / 填上 Key），让榜单和搜索结果都用新配置重算一遍 */
 function onAiChanged(): void {
   boardsRef.value?.refresh()
+  void enrichSearchResults()
 }
 
 function switchTab(next: 'search' | 'boards'): void {
@@ -232,6 +272,12 @@ function switchTab(next: 'search' | 'boards'): void {
           <span class="tiny">AI 润色描述</span>
         </label>
 
+        <label class="switch" title="用 AI 把结果里的英文简介译成中文（同一仓库只译一次，缓存复用）">
+          <input :checked="state.zhDesc" type="checkbox" @change="onZhToggle" />
+          <span class="track"></span>
+          <span class="tiny">中文简介</span>
+        </label>
+
         <select v-model="state.language" class="select compact" @change="applyFilter">
           <option v-for="l in LANGUAGES" :key="l.value" :value="l.value">{{ l.label }}</option>
         </select>
@@ -243,6 +289,7 @@ function switchTab(next: 'search' | 'boards'): void {
         <button class="btn btn-ghost btn-sm" @click="submit(false)">跳过 AI 直接搜</button>
 
         <div class="spacer"></div>
+        <span v-if="zhHint" class="tiny muted zh-hint">{{ zhHint }}</span>
         <span v-if="state.total" class="tiny muted">共 {{ formatNumber(state.total) }} 个仓库</span>
       </div>
 
@@ -307,11 +354,13 @@ function switchTab(next: 'search' | 'boards'): void {
           :repo="repo"
           :index="(state.page - 1) * state.perPage + i + 1"
           :tracked="trackedSet.has(repo.full_name)"
+          :zh="state.zhDesc"
           @deploy="deployRepo = $event"
           @install="installRepo = $event"
           @detail="readmeRepo = $event"
           @clone="cloneRepo = $event"
           @track="toggleTrack"
+          @translate="translateRepo"
         />
         <div class="pager">
           <button class="btn btn-sm" :disabled="state.page <= 1" @click="changePage(-1)">

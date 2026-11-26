@@ -19,6 +19,7 @@ import type {
   InstallOption,
   ProfileInput,
   ProfileUpdateEvent,
+  RepoItem,
   RepoProfile
 } from '../../shared/types'
 
@@ -255,7 +256,7 @@ function heuristic(input: ProfileInput): RepoProfile | null {
 
 // ---------------------------------------------------------------- 给榜单挂画像
 
-function toInput(item: BoardItem): ProfileInput {
+function toInput(item: RepoItem): ProfileInput {
   return {
     full_name: item.full_name,
     description: item.description || '',
@@ -268,7 +269,7 @@ function toInput(item: BoardItem): ProfileInput {
 }
 
 /** 同步挂载：优先用 AI 缓存，没有就退回元数据推测 */
-export function attach(items: BoardItem[]): BoardItem[] {
+export function attach<T extends RepoItem>(items: T[]): (T & { profile?: RepoProfile })[] {
   return items.map((it) => {
     const cached = read(it.full_name, it.pushed_at)
     if (cached) return { ...it, profile: cached }

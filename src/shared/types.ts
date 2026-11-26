@@ -95,6 +95,8 @@ export interface RepoItem {
   archived: boolean
   default_branch: string
   homepage: string
+  /** 中文画像；搜索结果的简介翻译也复用它（purpose 即中文一句话） */
+  profile?: RepoProfile
 }
 
 export interface SearchResponse {
