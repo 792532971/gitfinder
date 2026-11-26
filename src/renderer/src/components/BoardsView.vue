@@ -10,6 +10,7 @@ import type {
 import { BOARDS, BOARD_GROUPS, BOARD_LANGUAGES, BOARD_MAP } from '../../../shared/boards'
 import type { BoardGroupId } from '../../../shared/boards'
 import { formatNumber, timeAgo } from '../utils'
+import { toCloneable } from '../cloneable'
 import { state, toast } from '../store'
 import BoardRow from './BoardRow.vue'
 
@@ -124,17 +125,23 @@ async function load(refresh = false): Promise<void> {
   }
 }
 
-/** 只把 AI 真正需要的字段发过去，别把整条榜单塞进 IPC */
+/**
+ * 只把 AI 真正需要的字段发过去，别把整条榜单塞进 IPC。
+ * 注意最后要过一遍 toCloneable：items 来自 ref，里面的 topics 等数组是 Proxy，
+ * 直接跨 contextBridge 传会抛 "An object could not be cloned."。
+ */
 function toInputs(list: BoardItem[]): ProfileInput[] {
-  return list.map((i) => ({
-    full_name: i.full_name,
-    description: i.description || '',
-    language: i.language || '',
-    topics: i.topics || [],
-    stars: i.stars || 0,
-    archived: !!i.archived,
-    pushed_at: i.pushed_at || ''
-  }))
+  return toCloneable(
+    list.map((i) => ({
+      full_name: i.full_name,
+      description: i.description || '',
+      language: i.language || '',
+      topics: [...(i.topics || [])],
+      stars: i.stars || 0,
+      archived: !!i.archived,
+      pushed_at: i.pushed_at || ''
+    }))
+  )
 }
 
 async function requestProfiles(list: BoardItem[], force = false): Promise<void> {
