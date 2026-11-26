@@ -103,7 +103,11 @@ async function start(): Promise<void> {
       url: selected.value.downloadUrl,
       fileName: selected.value.name,
       mode: mode.value,
-      installDir: installDir.value.trim()
+      installDir: installDir.value.trim(),
+      // 这三个字段用于写管理台账：装完之后可以在「管理」页更新 / 卸载
+      fullName: props.repo.full_name,
+      name: props.repo.name,
+      version: release.value?.tagName || ''
     })
     taskId.value = id
   } catch (err: any) {

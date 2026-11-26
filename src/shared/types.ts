@@ -382,6 +382,161 @@ export interface AppInfo {
   userData: string
 }
 
+/* ------------------------------------------------------------------
+ * 管理页：本应用装过的程序 / 部署过的 Docker 服务
+ * 台账存在 userData/managed.json，只认自己的记录，不去猜系统里别的东西
+ * ---------------------------------------------------------------- */
+
+export interface ManagedAppItem {
+  kind: 'app'
+  id: string
+  fullName: string
+  name: string
+  /** 安装时对应的 Release tag */
+  version: string
+  installDir: string
+  /** 推断出的主程序 exe */
+  exePath: string
+  /** 卸载器 exe（目录内或注册表里找到的） */
+  uninstaller: string
+  /** 注册表里的静默卸载命令，优先于 uninstaller + /S */
+  quietUninstall: string
+  installerKind: 'nsis' | 'msi' | 'squirrel' | 'unknown'
+  sourceUrl: string
+  fileName: string
+  /** 手动安装模式：路径未经确认 */
+  manual: boolean
+  installedAt: number
+  updatedAt: number
+  // ---- 运行时探测 ----
+  /** installed / missing / manual（路径未确认） */
+  state: 'installed' | 'missing' | 'manual'
+  /** 注册表里的显示名 */
+  displayName: string
+  /** 最新 Release tag，查询失败为空 */
+  latestVersion: string
+  updateAvailable: boolean
+  /** 目录占用大小，MB */
+  sizeMb: number
+}
+
+export interface ManagedDockerItem {
+  kind: 'docker'
+  id: string
+  fullName: string
+  name: string
+  mode: 'compose' | 'dockerfile' | 'manual'
+  distro: string
+  /** WSL 内绝对路径 */
+  dir: string
+  dirName: string
+  imageName: string
+  containerName: string
+  hostPort: number
+  containerPort: number
+  extraArgs: string
+  composeFile: string
+  installedAt: number
+  updatedAt: number
+  // ---- 运行时探测 ----
+  state: 'running' | 'exited' | 'missing' | 'unknown'
+  statusText: string
+  image: string
+  /** compose 项目下实际的容器名 */
+  containers: string[]
+  /** 目录占用大小，MB */
+  sizeMb: number
+}
+
+export type ManagedItem = ManagedAppItem | ManagedDockerItem
+
+export type ManagedAction =
+  | 'start'
+  | 'stop'
+  | 'restart'
+  | 'update'
+  | 'uninstall'
+  | 'forget'
+
+export interface ManagedActionResult {
+  ok: boolean
+  message: string
+  output?: string
+  /** 操作后需要重新拉一遍列表 */
+  changed?: boolean
+}
+
+/* ------------------------------------------------------------------
+ * 容器页：WSL 发行版里所有容器（不只 GitFinder 部署的）
+ * 数据每次现查，不落盘
+ * ---------------------------------------------------------------- */
+
+export interface ContainerPort {
+  /** 绑定地址：0.0.0.0 / 127.0.0.1 / :: ，未发布为空 */
+  bind: string
+  /** 映射到宿主机的端口，未发布为 null */
+  host: number | null
+  container: number
+  protocol: string
+}
+
+export interface ContainerInfo {
+  id: string
+  name: string
+  image: string
+  state: 'running' | 'exited' | 'paused' | 'restarting' | 'created' | 'dead' | 'unknown'
+  /** docker ps 的 Status 原文，如 Up 3 days (healthy) */
+  status: string
+  ports: ContainerPort[]
+  /** docker ps 的 CreatedAt 原文 */
+  createdAt: string
+  /** com.docker.compose.project */
+  project: string
+  /** com.docker.compose.service */
+  service: string
+  /** compose 项目工作目录 */
+  workDir: string
+  /** compose 文件路径 */
+  composeFiles: string
+  /** 是否由 GitFinder 部署（台账里能对上） */
+  managed: boolean
+}
+
+export interface ContainerGroup {
+  /** compose 项目名；独立容器为空字符串 */
+  key: string
+  name: string
+  workDir: string
+  composeFiles: string
+  containers: ContainerInfo[]
+  running: number
+}
+
+export interface ContainerOverview {
+  distro: string
+  distros: string[]
+  docker: boolean
+  /** docker 服务端版本 */
+  version: string
+  groups: ContainerGroup[]
+  total: number
+  running: number
+  stopped: number
+  /** 已发布到宿主机的端口数 */
+  exposedPorts: number
+  /** 采集失败/部分失败时的提示，正常为空 */
+  error: string
+  at: number
+}
+
+export type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove'
+
+export interface ContainerActionResult {
+  ok: boolean
+  message: string
+  output?: string
+}
+
 /** 前端通过 window.api 调用的完整契约 */
 export interface Api {
   app: {
@@ -447,8 +602,32 @@ export interface Api {
       fileName: string
       mode: 'silent' | 'manual'
       installDir: string
+      /** 写入管理台账用，缺省则不记录 */
+      fullName?: string
+      name?: string
+      version?: string
     }) => Promise<{ taskId: string }>
     cancel: (taskId: string) => Promise<void>
+  }
+  manage: {
+    /** 读台账并探测当前状态（目录是否还在、容器是否在跑、有没有新版本） */
+    list: () => Promise<ManagedItem[]>
+    action: (id: string, action: ManagedAction) => Promise<ManagedActionResult>
+    /** Docker 服务日志（最近 N 行） */
+    logs: (id: string, tail?: number) => Promise<string>
+    /** 打开安装目录 / 浏览器访问 localhost:port */
+    open: (id: string) => Promise<void>
+    /** 手动安装模式下，让用户指定实际安装目录，再重扫主程序与卸载器 */
+    attachDir: (id: string) => Promise<ManagedItem[]>
+  }
+  containers: {
+    /** 列出某个发行版里的全部容器（含已停止的），按 compose 项目分组 */
+    overview: (distro?: string) => Promise<ContainerOverview>
+    action: (input: { distro: string; name: string; action: ContainerAction }) => Promise<ContainerActionResult>
+    /** 容器日志，最近 N 行 */
+    logs: (input: { distro: string; name: string; tail?: number }) => Promise<string>
+    /** 在资源管理器里打开 compose 项目目录 */
+    reveal: (input: { distro: string; dir: string }) => Promise<void>
   }
   clone: {
     /** 生成拉取计划（校验路径、检测目标是否已存在） */

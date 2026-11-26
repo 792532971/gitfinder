@@ -103,10 +103,17 @@ export function execWslCapture(
     if (opts.distro) args.push('-d', opts.distro)
     args.push('--', 'bash', '-lc', `echo '${b64}' | base64 -d | bash -s`)
 
-    const child = spawn('wsl.exe', args, {
-      env: { ...process.env, WSL_UTF8: '1' },
-      windowsHide: true
-    })
+    let child: ChildProcess
+    try {
+      child = spawn('wsl.exe', args, {
+        env: { ...process.env, WSL_UTF8: '1' },
+        windowsHide: true
+      })
+    } catch (e: any) {
+      // 少数环境下 spawn 会同步抛（比如被安全策略拦），这里转成可读结果而不是让调用方炸掉
+      resolve({ code: -1, stdout: '', stderr: `无法启动 wsl.exe：${String(e?.message || e)}` })
+      return
+    }
     let out = ''
     let err = ''
     const timer = setTimeout(() => {

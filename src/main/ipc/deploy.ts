@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process'
 import type { WebContents } from 'electron'
 import { runWslScript, execWslCapture } from '../lib/shell'
 import { loadSettings, gitProxyArgs } from '../lib/settings'
+import * as manage from './manage'
 import type { DeployPlan } from '../../shared/types'
 
 const running = new Map<string, ChildProcess>()
@@ -267,6 +268,10 @@ export function run(plan: DeployPlan, sender: WebContents): string {
     onExit: (code) => {
       if (!sender.isDestroyed()) sender.send('deploy:done', { taskId, ok: code === 0, code })
       running.delete(taskId)
+      // 部署成功才落账：管理页后续的启动 / 更新 / 卸载都靠这条记录
+      if (code === 0) {
+        manage.recordDockerDeploy(plan).catch((err) => console.error('[deploy] 写入管理台账失败', err))
+      }
     }
   })
   running.set(taskId, child)

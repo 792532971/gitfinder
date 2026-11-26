@@ -63,6 +63,19 @@ const api: Api = {
     download: (input) => call('install:download', input),
     cancel: (taskId) => call('install:cancel', taskId)
   },
+  manage: {
+    list: () => call('manage:list'),
+    action: (id, action) => call('manage:action', id, action),
+    logs: (id, tail) => call('manage:logs', id, tail),
+    open: (id) => call('manage:open', id),
+    attachDir: (id) => call('manage:attach-dir', id)
+  },
+  containers: {
+    overview: (distro) => call('containers:overview', distro),
+    action: (input) => call('containers:action', input),
+    logs: (input) => call('containers:logs', input),
+    reveal: (input) => call('containers:reveal', input)
+  },
   clone: {
     plan: (input) => call('clone:plan', input),
     run: (plan) => call('clone:run', plan),

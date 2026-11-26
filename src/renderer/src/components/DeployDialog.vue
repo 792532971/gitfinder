@@ -58,7 +58,7 @@ onMounted(async () => {
     if (e.taskId !== taskId.value) return
     running.value = false
     doneOk.value = e.ok
-    if (e.ok) toast('部署成功，去浏览器看看吧', 'ok')
+    if (e.ok) toast('部署成功，已记到「管理」页，可启动 / 更新 / 卸载', 'ok', 5000)
     else toast(`部署失败，退出码 ${e.code}`, 'error', 6000)
   })
 

@@ -7,6 +7,7 @@ import type {
   ProfileUpdateEvent
 } from '../../shared/types'
 import { toCloneable } from './cloneable'
+import { recordSearch } from './searchhistory'
 
 export interface Toast {
   id: number
@@ -135,6 +136,8 @@ export async function runSearch(opts: { useAi?: boolean; page?: number } = {}): 
 
   state.effectiveQuery = q
   await fetchResults()
+  // 只记用户原话（不是 AI 改写后的语法），搜挂了就不进历史
+  if (!state.error) recordSearch(raw, state.total)
 }
 
 export async function fetchResults(): Promise<void> {

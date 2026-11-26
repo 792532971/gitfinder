@@ -17,8 +17,19 @@ import {
 } from './store'
 import { LANGUAGES, SORT_OPTIONS, formatNumber } from './utils'
 import type { RepoItem } from '../../shared/types'
+import {
+  searchHistory,
+  HISTORY_VISIBLE,
+  removeSearch,
+  clearSearchHistory,
+  lastQuery,
+  shortLabel,
+  formatHistTime
+} from './searchhistory'
 import RepoCard from './components/RepoCard.vue'
 import BoardsView from './components/BoardsView.vue'
+import ContainersView from './components/ContainersView.vue'
+import ManageView from './components/ManageView.vue'
 import DeployDialog from './components/DeployDialog.vue'
 import CloneDialog from './components/CloneDialog.vue'
 import InstallDialog from './components/InstallDialog.vue'
@@ -26,9 +37,14 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import ReadmeDialog from './components/ReadmeDialog.vue'
 import Toast from './components/Toast.vue'
 
-const tab = ref<'search' | 'boards'>(
-  localStorage.getItem('gitfinder.tab') === 'boards' ? 'boards' : 'search'
-)
+type Tab = 'search' | 'boards' | 'containers' | 'manage'
+
+function initialTab(): Tab {
+  const saved = localStorage.getItem('gitfinder.tab')
+  return saved === 'boards' || saved === 'containers' || saved === 'manage' ? saved : 'search'
+}
+
+const tab = ref<Tab>(initialTab())
 const settingsOpen = ref(false)
 const settingsFocusToken = ref(false)
 const settingsFocusAi = ref(false)
@@ -51,6 +67,19 @@ const examples = [
 ]
 
 const pageCount = computed(() => Math.min(Math.ceil(state.total / state.perPage), 34))
+
+/** 历史词默认只露最近几条，展开后看全部 */
+const visibleHistory = computed(() =>
+  searchHistory.expanded
+    ? searchHistory.list
+    : searchHistory.list.slice(0, HISTORY_VISIBLE)
+)
+const hiddenHistoryCount = computed(() =>
+  Math.max(0, searchHistory.list.length - HISTORY_VISIBLE)
+)
+/** 「清空」二次确认，避免手滑把常用词全清了 */
+const confirmClear = ref(false)
+let clearTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 中文简介的进度/异常提示，放在筛选栏右侧 */
 const zhHint = computed(() => {
@@ -79,7 +108,10 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => offProfiles?.())
+onUnmounted(() => {
+  offProfiles?.()
+  if (clearTimer) clearTimeout(clearTimer)
+})
 
 function onZhToggle(e: Event): void {
   setZhDesc((e.target as HTMLInputElement).checked)
@@ -119,7 +151,48 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submit(state.aiEnabled)
+    return
   }
+  // 输入框为空时按 ↑ 带出上一次搜过的词
+  if (e.key === 'ArrowUp' && !state.query.trim()) {
+    const last = lastQuery()
+    if (last) {
+      e.preventDefault()
+      state.query = last
+    }
+  }
+}
+
+/** 点历史词：填回输入框并重搜，是否走 AI 润色尊重当前开关 */
+function useHistory(q: string): void {
+  if (state.polishing || state.searching) return
+  state.query = q
+  state.page = 1
+  submit(state.aiEnabled)
+}
+
+function dropHistory(q: string): void {
+  removeSearch(q)
+  toast('已从历史里移除', 'info', 1800)
+}
+
+function onClearHistory(): void {
+  if (!confirmClear.value) {
+    confirmClear.value = true
+    if (clearTimer) clearTimeout(clearTimer)
+    clearTimer = setTimeout(() => {
+      confirmClear.value = false
+      clearTimer = null
+    }, 3200)
+    return
+  }
+  if (clearTimer) {
+    clearTimeout(clearTimer)
+    clearTimer = null
+  }
+  confirmClear.value = false
+  clearSearchHistory()
+  toast('搜索历史已清空', 'ok', 2000)
 }
 
 async function reSearchEdited(): Promise<void> {
@@ -168,7 +241,7 @@ function onAiChanged(): void {
   void enrichSearchResults()
 }
 
-function switchTab(next: 'search' | 'boards'): void {
+function switchTab(next: Tab): void {
   tab.value = next
   localStorage.setItem('gitfinder.tab', next)
   if (next === 'search') {
@@ -213,6 +286,22 @@ function switchTab(next: 'search' | 'boards'): void {
             <rect x="11.2" y="2" width="2.8" height="12" rx="1" />
           </svg>
           榜单
+        </button>
+        <button class="tab" :class="{ on: tab === 'containers' }" @click="switchTab('containers')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2.2" y="5.6" width="4.1" height="4.1" rx="1" />
+            <rect x="9.7" y="5.6" width="4.1" height="4.1" rx="1" />
+            <path d="M2 12.6h12" stroke-linecap="round" />
+            <path d="M3.6 3.2 8 1.2l4.4 2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          容器
+        </button>
+        <button class="tab" :class="{ on: tab === 'manage' }" @click="switchTab('manage')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M2.5 5.2 8 2.5l5.5 2.7v5.6L8 13.5l-5.5-2.7V5.2Z" stroke-linejoin="round" />
+            <path d="M2.6 5.3 8 8l5.4-2.7M8 8v5.3" stroke-linejoin="round" />
+          </svg>
+          管理
         </button>
       </div>
 
@@ -261,6 +350,45 @@ function switchTab(next: 'search' | 'boards'): void {
             <span v-if="state.polishing || state.searching" class="spin">◌</span>
             <span v-else>✨</span>
             {{ state.polishing ? 'AI 理解中…' : state.searching ? '搜索中…' : '搜索' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 历史搜索词 -->
+      <div v-if="searchHistory.list.length" class="history-bar">
+        <div class="hist-head">
+          <span class="hist-label">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6" />
+              <path d="M8 4.6V8l2.4 1.6" stroke-linecap="round" />
+            </svg>
+            最近搜索
+            <span class="hist-count">{{ searchHistory.list.length }}</span>
+          </span>
+          <div class="hist-actions">
+            <button
+              v-if="hiddenHistoryCount || searchHistory.expanded"
+              class="hist-more"
+              @click="searchHistory.expanded = !searchHistory.expanded"
+            >
+              {{ searchHistory.expanded ? '收起' : `更多 ${hiddenHistoryCount}` }}
+            </button>
+            <span v-if="hiddenHistoryCount || searchHistory.expanded" class="hist-sep">·</span>
+            <button class="hist-clear" :class="{ danger: confirmClear }" @click="onClearHistory">
+              {{ confirmClear ? '确认清空？' : '清空' }}
+            </button>
+          </div>
+        </div>
+        <div class="hist-chips">
+          <button
+            v-for="h in visibleHistory"
+            :key="h.q"
+            class="hist-chip"
+            :title="`${h.q}\n${formatHistTime(h.at)}${h.total ? ` · 命中 ${formatNumber(h.total)} 个` : ''} · 搜过 ${h.count} 次`"
+            @click="useHistory(h.q)"
+          >
+            <span class="hist-text">{{ shortLabel(h.q) }}</span>
+            <span class="hist-x" title="从历史里移除" @click.stop="dropHistory(h.q)">×</span>
           </button>
         </div>
       </div>
@@ -388,6 +516,15 @@ function switchTab(next: 'search' | 'boards'): void {
       @go-search="switchTab('search')"
       @open-settings="openSettingsForAi"
       @tracked-change="trackedNames = $event"
+    />
+
+    <ContainersView v-if="tab === 'containers'" @go-manage="switchTab('manage')" />
+
+    <ManageView
+      v-if="tab === 'manage'"
+      @go-search="switchTab('search')"
+      @go-boards="switchTab('boards')"
+      @go-containers="switchTab('containers')"
     />
 
     <SettingsDialog
@@ -527,6 +664,117 @@ function switchTab(next: 'search' | 'boards'): void {
 .search-btn {
   padding: 0 22px;
   border-radius: var(--radius);
+  font-weight: 600;
+}
+
+/* 历史搜索词 */
+.history-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.hist-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.hist-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.hist-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.hist-sep {
+  font-size: 11px;
+  color: var(--border);
+}
+.hist-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.hist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 240px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  transition: all 0.15s;
+}
+.hist-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.hist-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist-x {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  color: var(--text-3);
+  opacity: 0;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.hist-chip:hover .hist-x {
+  opacity: 1;
+}
+.hist-x:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--red);
+}
+.hist-more,
+.hist-clear {
+  font-size: 11.5px;
+  color: var(--text-3);
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.hist-more:hover,
+.hist-clear:hover {
+  color: var(--accent);
+}
+.hist-clear.danger {
+  color: var(--red);
   font-weight: 600;
 }
 .filter-bar {

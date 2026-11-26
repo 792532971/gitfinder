@@ -6,6 +6,8 @@ import { polish, test as testAi, translate } from './ai'
 import * as deploy from './deploy'
 import * as clone from './clone'
 import * as installer from './installer'
+import * as manage from './manage'
+import * as containers from './containers'
 import * as leaderboard from './leaderboard'
 import * as profile from '../lib/profile'
 import { listDistros, diagnose } from '../lib/wslprobe'
@@ -117,6 +119,27 @@ export function registerIpc(): void {
   // ---------- install ----------
   handle('install:download', async (event, input: any) => installer.startDownload(input, event.sender))
   handle('install:cancel', async (_e, taskId: string) => installer.cancel(taskId))
+
+  // ---------- manage（已安装程序 / 已部署服务） ----------
+  handle('manage:list', async () => manage.list())
+  handle('manage:action', async (_e, id: string, action: any) => manage.action(id, action))
+  handle('manage:logs', async (_e, id: string, tail?: number) => manage.logs(id, tail))
+  handle('manage:open', async (_e, id: string) => manage.open(id))
+  handle('manage:attach-dir', async (event, id: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || undefined
+    const res = await dialog.showOpenDialog(win as any, {
+      title: '指定程序的安装目录',
+      properties: ['openDirectory']
+    })
+    if (res.canceled || !res.filePaths.length) return manage.list()
+    return manage.attachDir(id, res.filePaths[0])
+  })
+
+  // ---------- containers（WSL 里所有容器） ----------
+  handle('containers:overview', async (_e, distro?: string) => containers.overview(distro))
+  handle('containers:action', async (_e, input: any) => containers.action(input))
+  handle('containers:logs', async (_e, input: any) => containers.logs(input))
+  handle('containers:reveal', async (_e, input: any) => containers.reveal(input))
 
   // ---------- board ----------
   handle('board:fetch', async (_e, query: BoardQuery) => leaderboard.fetchBoard(query))
